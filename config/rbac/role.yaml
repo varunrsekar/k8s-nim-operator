@@ -63,6 +63,7 @@ rules:
   - apps.nvidia.com
   resources:
   - nemodatastores
+  - nemoentitystores
   - nemoguardrails
   - nimcaches
   - nimpipelines
@@ -79,6 +80,7 @@ rules:
   - apps.nvidia.com
   resources:
   - nemodatastores/finalizers
+  - nemoentitystores/finalizers
   - nemoguardrails/finalizers
   - nimcaches/finalizers
   - nimpipelines/finalizers
@@ -89,6 +91,7 @@ rules:
   - apps.nvidia.com
   resources:
   - nemodatastores/status
+  - nemoentitystores/status
   - nemoguardrails/status
   - nimcaches/status
   - nimpipelines/status
