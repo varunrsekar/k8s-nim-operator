@@ -39,8 +39,6 @@ import (
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 const (
-	// NIMAPIPort is the default port that the NIM serves on.
-	NIMAPIPort = 8000
 	// NIMServiceConditionReady indicates that the NIM deployment is ready.
 	NIMServiceConditionReady = "NIM_SERVICE_READY"
 	// NIMServiceConditionFailed indicates that the NIM deployment has failed.
@@ -196,7 +194,11 @@ func (n *NIMService) GetStandardEnv() []corev1.EnvVar {
 		},
 		{
 			Name:  "NIM_SERVER_PORT",
-			Value: fmt.Sprintf("%d", NIMAPIPort),
+			Value: fmt.Sprintf("%d", DefaultAPIPort),
+		},
+		{
+			Name:  "NIM_HTTP_API_PORT",
+			Value: fmt.Sprintf("%d", DefaultAPIPort),
 		},
 		{
 			Name:  "NIM_JSONL_LOGGING",
@@ -206,6 +208,13 @@ func (n *NIMService) GetStandardEnv() []corev1.EnvVar {
 			Name:  "NIM_LOG_LEVEL",
 			Value: "INFO",
 		},
+	}
+
+	if n.Spec.Expose.Service.GRPCPort != nil {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  "NIM_GRPC_API_PORT",
+			Value: fmt.Sprintf("%d", DefaultGRPCPort),
+		})
 	}
 
 	return envVars
@@ -677,8 +686,15 @@ func (n *NIMService) GetDeploymentParams() *rendertypes.DeploymentParams {
 		{
 			Name:          DefaultNamedPortAPI,
 			Protocol:      corev1.ProtocolTCP,
-			ContainerPort: NIMAPIPort,
+			ContainerPort: DefaultAPIPort,
 		},
+	}
+	if n.Spec.Expose.Service.GRPCPort != nil {
+		params.Ports = append(params.Ports, corev1.ContainerPort{
+			Name:          DefaultNamedPortGRPC,
+			Protocol:      corev1.ProtocolTCP,
+			ContainerPort: *n.Spec.Expose.Service.GRPCPort,
+		})
 	}
 
 	return params
@@ -754,6 +770,14 @@ func (n *NIMService) GetServiceParams() *rendertypes.ServiceParams {
 			TargetPort: intstr.FromString((DefaultNamedPortAPI)),
 			Protocol:   corev1.ProtocolTCP,
 		},
+	}
+	if n.Spec.Expose.Service.GRPCPort != nil {
+		params.Ports = append(params.Ports, corev1.ServicePort{
+			Name:       DefaultNamedPortGRPC,
+			Port:       *n.Spec.Expose.Service.GRPCPort,
+			TargetPort: intstr.FromString(DefaultNamedPortGRPC),
+			Protocol:   corev1.ProtocolTCP,
+		})
 	}
 	return params
 }

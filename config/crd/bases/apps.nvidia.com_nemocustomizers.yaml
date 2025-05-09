@@ -302,8 +302,16 @@ spec:
                         additionalProperties:
                           type: string
                         type: object
+                      grpcPort:
+                        description: |-
+                          GRPCPort is the grpc serving port
+                          Note: This port is only used for NIMService.
+                        format: int32
+                        maximum: 65535
+                        minimum: 1
+                        type: integer
                       name:
-                        description: override the default service name
+                        description: Override the default service name
                         type: string
                       port:
                         default: 8000

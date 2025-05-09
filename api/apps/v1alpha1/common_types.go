@@ -25,10 +25,14 @@ import (
 )
 
 const (
-	// DefaultAPIPort is the default api  port.
+	// DefaultAPIPort is the default api port.
 	DefaultAPIPort = 8000
 	// DefaultNamedPortAPI is the default name for api port.
 	DefaultNamedPortAPI = "api"
+	// DefaultGRPCPort is the default grpc port.
+	DefaultGRPCPort = 50051
+	// DefaultNamedPortGRPC is the default name for grpc port.
+	DefaultNamedPortGRPC = "grpc"
 )
 
 // Expose defines attributes to expose the service.
@@ -40,13 +44,20 @@ type Expose struct {
 // Service defines attributes to create a service.
 type Service struct {
 	Type corev1.ServiceType `json:"type,omitempty"`
-	// override the default service name
+	// Override the default service name
 	Name string `json:"name,omitempty"`
 	// Port is the main api serving port (default: 8000)
+	//
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=65535
 	// +kubebuilder:default:=8000
-	Port        *int32            `json:"port,omitempty"`
+	Port *int32 `json:"port,omitempty"`
+	// GRPCPort is the grpc serving port
+	// Note: This port is only used for NIMService.
+	//
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	GRPCPort    *int32            `json:"grpcPort,omitempty"`
 	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
