@@ -1,5 +1,5 @@
 /*
-Copyright 2024.
+Copyright 2025.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -40,86 +40,127 @@ import (
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 const (
-	// NIMServiceConditionReady indicates that the NIM deployment is ready.
-	NIMServiceConditionReady = "NIM_SERVICE_READY"
-	// NIMServiceConditionFailed indicates that the NIM deployment has failed.
-	NIMServiceConditionFailed = "NIM_SERVICE_FAILED"
+	// GPUPlanConditionReady indicates that the NIM deployment is ready.
+	GPUPlanConditionReady = "GPU_PLAN_READY"
+	// GPUPlanConditionFailed indicates that the NIM deployment has failed.
+	GPUPlanConditionFailed = "GPU_PLAN_FAILED"
 
-	// NIMServiceStatusPending indicates that NIM deployment is in pending state.
-	NIMServiceStatusPending = "Pending"
-	// NIMServiceStatusNotReady indicates that NIM deployment is not ready.
-	NIMServiceStatusNotReady = "NotReady"
-	// NIMServiceStatusReady indicates that NIM deployment is ready.
-	NIMServiceStatusReady = "Ready"
-	// NIMServiceStatusFailed indicates that NIM deployment has failed.
-	NIMServiceStatusFailed = "Failed"
+	// GPUPlanStatusPending indicates that NIM deployment is in pending state.
+	GPUPlanStatusPending = "Pending"
+	// GPUPlanStatusNotReady indicates that NIM deployment is not ready.
+	GPUPlanStatusNotReady = "NotReady"
+	// GPUPlanStatusReady indicates that NIM deployment is ready.
+	GPUPlanStatusReady = "Ready"
+	// GPUPlanStatusFailed indicates that NIM deployment has failed.
+	GPUPlanStatusFailed = "Failed"
 )
 
-// NIMServiceSpec defines the desired state of NIMService.
-type NIMServiceSpec struct {
-	Image   Image           `json:"image"`
-	Command []string        `json:"command,omitempty"`
-	Args    []string        `json:"args,omitempty"`
-	Env     []corev1.EnvVar `json:"env,omitempty"`
-	// The name of an existing pull secret containing the NGC_API_KEY
-	AuthSecret string `json:"authSecret"`
-	// Storage is the target storage for caching NIM model if NIMCache is not provided
-	Storage        NIMServiceStorage            `json:"storage,omitempty"`
-	Labels         map[string]string            `json:"labels,omitempty"`
-	Annotations    map[string]string            `json:"annotations,omitempty"`
-	NodeSelector   map[string]string            `json:"nodeSelector,omitempty"`
-	Tolerations    []corev1.Toleration          `json:"tolerations,omitempty"`
-	PodAffinity    *corev1.PodAffinity          `json:"podAffinity,omitempty"`
-	Resources      *corev1.ResourceRequirements `json:"resources,omitempty"`
-	Expose         Expose                       `json:"expose,omitempty"`
-	LivenessProbe  Probe                        `json:"livenessProbe,omitempty"`
-	ReadinessProbe Probe                        `json:"readinessProbe,omitempty"`
-	StartupProbe   Probe                        `json:"startupProbe,omitempty"`
-	Scale          Autoscaling                  `json:"scale,omitempty"`
-	SchedulerName  string                       `json:"schedulerName,omitempty"`
-	Metrics        Metrics                      `json:"metrics,omitempty"`
+// GPUPlanSpec defines the desired state of GPUPlan.
+type GPUPlanSpec struct {
+       // ModelRequestSpec is the specification of a model's inferencing needs.
+       // +kubebuilder:validation:MinLength=1
+	ModelRequests *ModelRequestSpec `json:"modelRequests"`
+
+	GPURequest *GPURequest `json:"gpuRequest,omitempty"`
+
+	GPUSharing *GPUSharingSpec `json:"gpuSharing,omitempty"`
+
+	// ClaimTemplateGenerationLimit is the maximum number of DRA resource claim templates to generate for the GPUPlan.
 	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:default:=1
-	Replicas         int        `json:"replicas,omitempty"`
-	UserID           *int64     `json:"userID,omitempty"`
-	GroupID          *int64     `json:"groupID,omitempty"`
-	RuntimeClassName string     `json:"runtimeClassName,omitempty"`
-	Proxy            *ProxySpec `json:"proxy,omitempty"`
+	// +kubebuilder:validation:Maximum=32
+	ClaimTemplateGenerationLimit *int32 `json:"claimTemplateGenerationLimit,omitempty"`
+}
 
-	// GPUPlan represents provisioning hints for how GPUs should be allocated to the NIMService.
-	// NIM-Operator will attempt to fulfill the GPUPlan, but it is not guaranteed.
-	GPUPlan *NIMServiceGPUPlan `json:"gpuPlan,omitempty"`
+type ModelRequestSpec struct {
+       // ModelConfig is the configuration to access the model repository in NGC/HF/NIMCache.
+       //
+       // +kubebuilder:validation:Required
+	   // +kubebuilder:validation:XValidation:rule="has(self.RegistryConfig) || has(self.NIMCacheConfig)",message="Only one of RegistryConfig or NIMCacheConfig can be set."
+       ModelConfig ModelConfig `json:"modelConfig"`
 
-	// ResourceClaims represents resource claims needed by the NIMService.
+       // Requests is the list of requests for different inferencing needs.
+       // Each generated resource claim template would satisfy exactly 1 model request in this list.
+       // If this is empty, then model config defaults are used to generate the claim templates.
+       Requests []ModelRequest `json:"requests"`
+}
+
+type ModelRequest struct {
+       // Name is used to uniquely identify the model request
+       Name string `json:"name"`
+
+	// Parallesism defines the parallelism configuration for the model inferencing.
+	// This is used to determine how many GPUs to use for the model.
+	Parallelism *ParallelismSpec `json:"parallelism"`
+
+	// BatchSize is the number of requests to process concurrently by the model.
+	// +kubebuilder:validation:Minimum=1
+	BatchSize   *int32          `json:"batchSize,omitempty"`
+
+	// SequenceLength is the maximum number of tokens in a single request to process by the model.
+	// +kubebuilder:validation:Minimum=1
+	SequenceLength *int32 `json:"sequenceLength,omitempty"`
+
+	// MemoryOverheadPercentage is the percentage of memory overhead to account for.
 	//
-	// +kubebuilder:validation:XValidation:rule="self.all(e, has(e.resourceClaimName) != has(e.resourceClaimTemplateName))",message="Exactly one of resourceClaimName or resourceClaimTemplateName must be set for each PodResourceCLaim."
-	ResourceClaims []corev1.PodResourceClaim `json:"resourceClaims,omitempty"`
+	//+kubebuilder:default="0%"
+	//+kubebuilder:validation:XIntOrString
+	//+kubebuilder:validation:Pattern="^((100|[0-9]{1,2})%|[0-9]+)$"
+	MemoryOverheadPercentage intstr.IntOrString `json:"memoryOverheadPercentage"`
 }
 
-type NIMServiceGPUPlan struct {
-	// GPUPlanName is the name of the GPUPlan in the same namespace as this NIMService.
-	GPUPlanName string `json:"gpuPlanName"`
+type ModelConfig struct {
+      RegistryConfig *RegistryConfig `json:"ngcConfig,omitempty"`
+	  NIMCacheConfig *NIMCacheConfig `json:"nimCacheConfig,omitempty"`
 }
 
-// NIMCacheVolSpec defines the spec to use NIMCache volume.
-type NIMCacheVolSpec struct {
-	Name    string `json:"name,omitempty"`
-	Profile string `json:"profile,omitempty"`
+type RegistryConfig struct {
+type ParallelismSpec struct {
+	// TP aka tensor parallelism defines how many chunks to shard the model horizontally.
+	// Each chunk of the model is loaded on a different GPU.
+	// +kubebuilder:validation:Minimum=1
+	TP *int32 `json:"tp"`
+	// PP aka pipeline parallelism defines how many chunks to shard the model vertically.
+	// Each chunk of the model is loaded on a different GPU.
+	// +kubebuilder:validation:Minimum=1
+	PP *int32 `json:"pp"`
 }
 
-// NIMServiceStatus defines the observed state of NIMService.
-type NIMServiceStatus struct {
+type GPURequest struct {
+	// Product is the product name of the GPU to consider.
+	Product *string `json:"product,omitempty"`
+	// DeviceID is the GPU device ID to consider.
+	DeviceID *string `json:"deviceID,omitempty"`
+	// Architecture is the architecture of the GPU.
+	Architecture string `json:"architecture"`
+	// MemoryBytes is the total amount of memory in bytes needed to be served by the GPU(s).
+	//
+	// Note: If 1 GPU cannot satisfy this request, then this may lead to multiple GPUs being used.
+	//
+	// +kubebuilder:validation:Minimum=1
+	MemoryBytes *int64 `json:"memoryBytes,omitempty"`
+
+      // TODO: ADD MORE GPU FILTERS AS NECESSARY.
+}
+
+type GPUSharingSpec struct {
+	// TP aka tensor parallelism defines how many chunks to shard the model horizontally.
+	// Each chunk of the model is loaded on a different GPU.
+	// +kubebuilder:validation:Minimum=1
+	TP *int32 `json:"tp"`
+}
+// GPUPlanStatus defines the observed state of GPUPlan.
+type GPUPlanStatus struct {
 	Conditions        []metav1.Condition `json:"conditions,omitempty"`
-	AvailableReplicas int32              `json:"availableReplicas,omitempty"`
 	State             string             `json:"state,omitempty"`
-	Model             *ModelStatus       `json:"model,omitempty"`
+	ClaimTemplates    []GPUPlanResourceClaimTemplate `json:"claimTemplates,omitempty"`
+
 }
 
-// ModelStatus defines the configuration of the NIMService model.
-type ModelStatus struct {
-	Name             string `json:"name"`
-	ClusterEndpoint  string `json:"clusterEndpoint"`
-	ExternalEndpoint string `json:"externalEndpoint"`
+// GPUPlanResourceClaimTemplate defines the status of the DRA resource claim template generated for the GPUPlan.
+type GPUPlanResourceClaimTemplate struct {
+	Name string `json:"name"`
+       ModelRequest string `json:"modelRequest,omitempty"`
+	CreationTimestamp metav1.Time `json:"creationTimestamp"`
 }
 
 // +genclient
@@ -128,67 +169,44 @@ type ModelStatus struct {
 // +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.state`,priority=0
 // +kubebuilder:printcolumn:name="Age",type="date",format="date-time",JSONPath=".metadata.creationTimestamp",priority=0
 
-// NIMService is the Schema for the nimservices API.
-type NIMService struct {
+// GPUPlan is the Schema for the nimservices API.
+type GPUPlan struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   NIMServiceSpec   `json:"spec,omitempty"`
-	Status NIMServiceStatus `json:"status,omitempty"`
+	Spec   GPUPlanSpec   `json:"spec,omitempty"`
+	Status GPUPlanStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// NIMServiceList contains a list of NIMService.
-type NIMServiceList struct {
+// GPUPlanList contains a list of GPUPlan.
+type GPUPlanList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []NIMService `json:"items"`
+	Items           []GPUPlan `json:"items"`
 }
 
-// NIMServiceStorage defines the attributes of various storage targets used to store the model.
-type NIMServiceStorage struct {
-	NIMCache NIMCacheVolSpec `json:"nimCache,omitempty"`
-	// SharedMemorySizeLimit sets the max size of the shared memory volume (emptyDir) used by NIMs for fast model runtime I/O.
-	SharedMemorySizeLimit *resource.Quantity `json:"sharedMemorySizeLimit,omitempty"`
-	// PersistentVolumeClaim is the pvc volume used for caching NIM
-	PVC PersistentVolumeClaim `json:"pvc,omitempty"`
-	// HostPath is the host path volume for caching NIM
-	HostPath *string `json:"hostPath,omitempty"`
-	// ReadOnly mode indicates if the volume should be mounted as read-only
-	ReadOnly *bool `json:"readOnly,omitempty"`
-}
-
-// GetPVCName returns the name to be used for the PVC based on the custom spec
-// Prefers pvc.Name if explicitly set by the user in the NIMService instance.
-func (n *NIMService) GetPVCName(pvc PersistentVolumeClaim) string {
-	pvcName := fmt.Sprintf("%s-pvc", n.GetName())
-	if pvc.Name != "" {
-		pvcName = pvc.Name
-	}
-	return pvcName
-}
-
-// GetStandardSelectorLabels returns the standard selector labels for the NIMService deployment.
-func (n *NIMService) GetStandardSelectorLabels() map[string]string {
+// GetStandardSelectorLabels returns the standard selector labels for the GPUPlan deployment.
+func (n *GPUPlan) GetStandardSelectorLabels() map[string]string {
 	return map[string]string{
 		"app": n.Name,
 	}
 }
 
-// GetStandardLabels returns the standard set of labels for NIMService resources.
-func (n *NIMService) GetStandardLabels() map[string]string {
+// GetStandardLabels returns the standard set of labels for GPUPlan resources.
+func (n *GPUPlan) GetStandardLabels() map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/name":             n.Name,
 		"app.kubernetes.io/instance":         n.Name,
 		"app.kubernetes.io/operator-version": os.Getenv("OPERATOR_VERSION"),
-		"app.kubernetes.io/part-of":          "nim-service",
+		"app.kubernetes.io/part-of":          "gou-plan",
 		"app.kubernetes.io/managed-by":       "k8s-nim-operator",
 	}
 }
 
-// GetStandardEnv returns the standard set of env variables for the NIMService container.
-func (n *NIMService) GetStandardEnv() []corev1.EnvVar {
+// GetStandardEnv returns the standard set of env variables for the GPUPlan container.
+func (n *GPUPlan) GetStandardEnv() []corev1.EnvVar {
 	// add standard env required for NIM service
 	envVars := []corev1.EnvVar{
 		{
@@ -246,8 +264,8 @@ func (n *NIMService) GetStandardEnv() []corev1.EnvVar {
 	return envVars
 }
 
-// GetProxySpec returns the proxy spec for the NIMService deployment.
-func (n *NIMService) GetProxyEnv() []corev1.EnvVar {
+// GetProxySpec returns the proxy spec for the GPUPlan deployment.
+func (n *GPUPlan) GetProxyEnv() []corev1.EnvVar {
 
 	envVars := []corev1.EnvVar{
 		{
@@ -283,8 +301,8 @@ func (n *NIMService) GetProxyEnv() []corev1.EnvVar {
 	return envVars
 }
 
-// GetStandardAnnotations returns default annotations to apply to the NIMService instance.
-func (n *NIMService) GetStandardAnnotations() map[string]string {
+// GetStandardAnnotations returns default annotations to apply to the GPUPlan instance.
+func (n *GPUPlan) GetStandardAnnotations() map[string]string {
 	standardAnnotations := map[string]string{
 		"openshift.io/required-scc":             "nonroot",
 		utils.NvidiaAnnotationParentSpecHashKey: utils.DeepHashObject(n.Spec),
@@ -295,8 +313,8 @@ func (n *NIMService) GetStandardAnnotations() map[string]string {
 	return standardAnnotations
 }
 
-// GetNIMServiceAnnotations returns annotations to apply to the NIMService instance.
-func (n *NIMService) GetNIMServiceAnnotations() map[string]string {
+// GetGPUPlanAnnotations returns annotations to apply to the GPUPlan instance.
+func (n *GPUPlan) GetGPUPlanAnnotations() map[string]string {
 	standardAnnotations := n.GetStandardAnnotations()
 
 	if n.Spec.Annotations != nil {
@@ -306,8 +324,8 @@ func (n *NIMService) GetNIMServiceAnnotations() map[string]string {
 	return standardAnnotations
 }
 
-// GetServiceLabels returns merged labels to apply to the NIMService instance.
-func (n *NIMService) GetServiceLabels() map[string]string {
+// GetServiceLabels returns merged labels to apply to the GPUPlan instance.
+func (n *GPUPlan) GetServiceLabels() map[string]string {
 	standardLabels := n.GetStandardLabels()
 
 	if n.Spec.Labels != nil {
@@ -316,44 +334,44 @@ func (n *NIMService) GetServiceLabels() map[string]string {
 	return standardLabels
 }
 
-// GetSelectorLabels returns standard selector labels to apply to the NIMService instance.
-func (n *NIMService) GetSelectorLabels() map[string]string {
+// GetSelectorLabels returns standard selector labels to apply to the GPUPlan instance.
+func (n *GPUPlan) GetSelectorLabels() map[string]string {
 	// TODO: add custom ones
 	return n.GetStandardSelectorLabels()
 }
 
-// GetNodeSelector returns node selector labels for the NIMService instance.
-func (n *NIMService) GetNodeSelector() map[string]string {
+// GetNodeSelector returns node selector labels for the GPUPlan instance.
+func (n *GPUPlan) GetNodeSelector() map[string]string {
 	return n.Spec.NodeSelector
 }
 
-// GetTolerations returns tolerations for the NIMService instance.
-func (n *NIMService) GetTolerations() []corev1.Toleration {
+// GetTolerations returns tolerations for the GPUPlan instance.
+func (n *GPUPlan) GetTolerations() []corev1.Toleration {
 	return n.Spec.Tolerations
 }
 
-// GetPodAffinity returns pod affinity for the NIMService instance.
-func (n *NIMService) GetPodAffinity() *corev1.PodAffinity {
+// GetPodAffinity returns pod affinity for the GPUPlan instance.
+func (n *GPUPlan) GetPodAffinity() *corev1.PodAffinity {
 	return n.Spec.PodAffinity
 }
 
-// GetContainerName returns name of the container for NIMService deployment.
-func (n *NIMService) GetContainerName() string {
+// GetContainerName returns name of the container for GPUPlan deployment.
+func (n *GPUPlan) GetContainerName() string {
 	return fmt.Sprintf("%s-ctr", n.Name)
 }
 
-// GetCommand return command to override for the NIMService container.
-func (n *NIMService) GetCommand() []string {
+// GetCommand return command to override for the GPUPlan container.
+func (n *GPUPlan) GetCommand() []string {
 	return n.Spec.Command
 }
 
-// GetArgs return arguments for the NIMService container.
-func (n *NIMService) GetArgs() []string {
+// GetArgs return arguments for the GPUPlan container.
+func (n *GPUPlan) GetArgs() []string {
 	return n.Spec.Args
 }
 
 // GetEnv returns merged slice of standard and user specified env variables.
-func (n *NIMService) GetEnv() []corev1.EnvVar {
+func (n *GPUPlan) GetEnv() []corev1.EnvVar {
 	envVarList := utils.MergeEnvVars(n.GetStandardEnv(), n.Spec.Env)
 	if n.GetProxySpec() != nil {
 		envVarList = utils.MergeEnvVars(envVarList, n.GetProxyEnv())
@@ -361,23 +379,23 @@ func (n *NIMService) GetEnv() []corev1.EnvVar {
 	return envVarList
 }
 
-// GetImage returns container image for the NIMService.
-func (n *NIMService) GetImage() string {
+// GetImage returns container image for the GPUPlan.
+func (n *GPUPlan) GetImage() string {
 	return fmt.Sprintf("%s:%s", n.Spec.Image.Repository, n.Spec.Image.Tag)
 }
 
 // GetImagePullSecrets returns the image pull secrets for the NIM container.
-func (n *NIMService) GetImagePullSecrets() []string {
+func (n *GPUPlan) GetImagePullSecrets() []string {
 	return n.Spec.Image.PullSecrets
 }
 
 // GetImagePullPolicy returns the image pull policy for the NIM container.
-func (n *NIMService) GetImagePullPolicy() string {
+func (n *GPUPlan) GetImagePullPolicy() string {
 	return n.Spec.Image.PullPolicy
 }
 
-// GetResources returns resources to allocate to the NIMService container.
-func (n *NIMService) GetResources() *corev1.ResourceRequirements {
+// GetResources returns resources to allocate to the GPUPlan container.
+func (n *GPUPlan) GetResources() *corev1.ResourceRequirements {
 	return n.Spec.Resources
 }
 
@@ -389,16 +407,16 @@ func IsProbeEnabled(probe Probe) bool {
 	return *probe.Enabled
 }
 
-// GetLivenessProbe returns liveness probe for the NIMService container.
-func (n *NIMService) GetLivenessProbe() *corev1.Probe {
+// GetLivenessProbe returns liveness probe for the GPUPlan container.
+func (n *GPUPlan) GetLivenessProbe() *corev1.Probe {
 	if n.Spec.LivenessProbe.Probe == nil {
 		return n.GetDefaultLivenessProbe()
 	}
 	return n.Spec.LivenessProbe.Probe
 }
 
-// GetDefaultLivenessProbe returns the default liveness probe for the NIMService container.
-func (n *NIMService) GetDefaultLivenessProbe() *corev1.Probe {
+// GetDefaultLivenessProbe returns the default liveness probe for the GPUPlan container.
+func (n *GPUPlan) GetDefaultLivenessProbe() *corev1.Probe {
 	probe := corev1.Probe{
 		InitialDelaySeconds: 15,
 		TimeoutSeconds:      1,
@@ -416,16 +434,16 @@ func (n *NIMService) GetDefaultLivenessProbe() *corev1.Probe {
 	return &probe
 }
 
-// GetReadinessProbe returns readiness probe for the NIMService container.
-func (n *NIMService) GetReadinessProbe() *corev1.Probe {
+// GetReadinessProbe returns readiness probe for the GPUPlan container.
+func (n *GPUPlan) GetReadinessProbe() *corev1.Probe {
 	if n.Spec.ReadinessProbe.Probe == nil {
 		return n.GetDefaultReadinessProbe()
 	}
 	return n.Spec.ReadinessProbe.Probe
 }
 
-// GetDefaultReadinessProbe returns the default readiness probe for the NIMService container.
-func (n *NIMService) GetDefaultReadinessProbe() *corev1.Probe {
+// GetDefaultReadinessProbe returns the default readiness probe for the GPUPlan container.
+func (n *GPUPlan) GetDefaultReadinessProbe() *corev1.Probe {
 	probe := corev1.Probe{
 		InitialDelaySeconds: 15,
 		TimeoutSeconds:      1,
@@ -443,16 +461,16 @@ func (n *NIMService) GetDefaultReadinessProbe() *corev1.Probe {
 	return &probe
 }
 
-// GetStartupProbe returns startup probe for the NIMService container.
-func (n *NIMService) GetStartupProbe() *corev1.Probe {
+// GetStartupProbe returns startup probe for the GPUPlan container.
+func (n *GPUPlan) GetStartupProbe() *corev1.Probe {
 	if n.Spec.StartupProbe.Probe == nil {
 		return n.GetDefaultStartupProbe()
 	}
 	return n.Spec.StartupProbe.Probe
 }
 
-// GetDefaultStartupProbe returns the default startup probe for the NIMService container.
-func (n *NIMService) GetDefaultStartupProbe() *corev1.Probe {
+// GetDefaultStartupProbe returns the default startup probe for the GPUPlan container.
+func (n *GPUPlan) GetDefaultStartupProbe() *corev1.Probe {
 	probe := corev1.Probe{
 		InitialDelaySeconds: 30,
 		TimeoutSeconds:      1,
@@ -470,14 +488,14 @@ func (n *NIMService) GetDefaultStartupProbe() *corev1.Probe {
 	return &probe
 }
 
-// GetVolumesMounts returns volume mounts for the NIMService container.
-func (n *NIMService) GetVolumesMounts() []corev1.Volume {
+// GetVolumesMounts returns volume mounts for the GPUPlan container.
+func (n *GPUPlan) GetVolumesMounts() []corev1.Volume {
 	// TODO: setup volume mounts required for NIM
 	return nil
 }
 
-// GetVolumes returns volumes for the NIMService container.
-func (n *NIMService) GetVolumes(modelPVC PersistentVolumeClaim) []corev1.Volume {
+// GetVolumes returns volumes for the GPUPlan container.
+func (n *GPUPlan) GetVolumes(modelPVC PersistentVolumeClaim) []corev1.Volume {
 	// TODO: Fetch actual PVC name from associated NIMCache obj
 	volumes := []corev1.Volume{
 		{
@@ -507,8 +525,8 @@ func (n *NIMService) GetVolumes(modelPVC PersistentVolumeClaim) []corev1.Volume 
 	return volumes
 }
 
-// GetVolumeMounts returns volumes for the NIMService container.
-func (n *NIMService) GetVolumeMounts(modelPVC PersistentVolumeClaim) []corev1.VolumeMount {
+// GetVolumeMounts returns volumes for the GPUPlan container.
+func (n *GPUPlan) GetVolumeMounts(modelPVC PersistentVolumeClaim) []corev1.VolumeMount {
 	volumeMounts := []corev1.VolumeMount{
 		{
 			Name:      "model-store",
@@ -527,51 +545,51 @@ func (n *NIMService) GetVolumeMounts(modelPVC PersistentVolumeClaim) []corev1.Vo
 	return volumeMounts
 }
 
-// GetServiceAccountName returns service account name for the NIMService deployment.
-func (n *NIMService) GetServiceAccountName() string {
+// GetServiceAccountName returns service account name for the GPUPlan deployment.
+func (n *GPUPlan) GetServiceAccountName() string {
 	return n.Name
 }
 
-// GetRuntimeClassName return the runtime class name for the NIMService deployment.
-func (n *NIMService) GetRuntimeClassName() string {
+// GetRuntimeClassName return the runtime class name for the GPUPlan deployment.
+func (n *GPUPlan) GetRuntimeClassName() string {
 	return n.Spec.RuntimeClassName
 }
 
-// GetNIMCacheName returns the NIMCache name to use for the NIMService deployment.
-func (n *NIMService) GetNIMCacheName() string {
+// GetNIMCacheName returns the NIMCache name to use for the GPUPlan deployment.
+func (n *GPUPlan) GetNIMCacheName() string {
 	return n.Spec.Storage.NIMCache.Name
 }
 
-// GetNIMCacheProfile returns the explicit profile to use for the NIMService deployment.
-func (n *NIMService) GetNIMCacheProfile() string {
+// GetNIMCacheProfile returns the explicit profile to use for the GPUPlan deployment.
+func (n *GPUPlan) GetNIMCacheProfile() string {
 	return n.Spec.Storage.NIMCache.Profile
 }
 
-// GetHPA returns the HPA spec for the NIMService deployment.
-func (n *NIMService) GetHPA() HorizontalPodAutoscalerSpec {
+// GetHPA returns the HPA spec for the GPUPlan deployment.
+func (n *GPUPlan) GetHPA() HorizontalPodAutoscalerSpec {
 	return n.Spec.Scale.HPA
 }
 
-// GetServiceMonitor returns the Service Monitor details for the NIMService deployment.
-func (n *NIMService) GetServiceMonitor() ServiceMonitor {
+// GetServiceMonitor returns the Service Monitor details for the GPUPlan deployment.
+func (n *GPUPlan) GetServiceMonitor() ServiceMonitor {
 	return n.Spec.Metrics.ServiceMonitor
 }
 
-// GetReplicas returns replicas for the NIMService deployment.
-func (n *NIMService) GetReplicas() int {
+// GetReplicas returns replicas for the GPUPlan deployment.
+func (n *GPUPlan) GetReplicas() int {
 	if n.IsAutoScalingEnabled() {
 		return 0
 	}
 	return n.Spec.Replicas
 }
 
-// GetDeploymentKind returns the kind of deployment for NIMService.
-func (n *NIMService) GetDeploymentKind() string {
+// GetDeploymentKind returns the kind of deployment for GPUPlan.
+func (n *GPUPlan) GetDeploymentKind() string {
 	return "Deployment"
 }
 
-// GetInitContainers returns the init containers for the NIMService deployment.
-func (n *NIMService) GetInitContainers() []corev1.Container {
+// GetInitContainers returns the init containers for the GPUPlan deployment.
+func (n *GPUPlan) GetInitContainers() []corev1.Container {
 	if n.Spec.Proxy != nil {
 		return []corev1.Container{
 			{
@@ -587,57 +605,57 @@ func (n *NIMService) GetInitContainers() []corev1.Container {
 	return []corev1.Container{}
 }
 
-// IsAutoScalingEnabled returns true if autoscaling is enabled for NIMService deployment.
-func (n *NIMService) IsAutoScalingEnabled() bool {
+// IsAutoScalingEnabled returns true if autoscaling is enabled for GPUPlan deployment.
+func (n *GPUPlan) IsAutoScalingEnabled() bool {
 	return n.Spec.Scale.Enabled != nil && *n.Spec.Scale.Enabled
 }
 
-// IsIngressEnabled returns true if ingress is enabled for NIMService deployment.
-func (n *NIMService) IsIngressEnabled() bool {
+// IsIngressEnabled returns true if ingress is enabled for GPUPlan deployment.
+func (n *GPUPlan) IsIngressEnabled() bool {
 	return n.Spec.Expose.Ingress.Enabled != nil && *n.Spec.Expose.Ingress.Enabled
 }
 
-// GetIngressSpec returns the Ingress spec NIMService deployment.
-func (n *NIMService) GetIngressSpec() networkingv1.IngressSpec {
+// GetIngressSpec returns the Ingress spec GPUPlan deployment.
+func (n *GPUPlan) GetIngressSpec() networkingv1.IngressSpec {
 	return n.Spec.Expose.Ingress.Spec
 }
 
-// IsServiceMonitorEnabled returns true if servicemonitor is enabled for NIMService deployment.
-func (n *NIMService) IsServiceMonitorEnabled() bool {
+// IsServiceMonitorEnabled returns true if servicemonitor is enabled for GPUPlan deployment.
+func (n *GPUPlan) IsServiceMonitorEnabled() bool {
 	return n.Spec.Metrics.Enabled != nil && *n.Spec.Metrics.Enabled
 }
 
-// GetServicePort returns the service port for the NIMService deployment or default port.
-func (n *NIMService) GetServicePort() int32 {
+// GetServicePort returns the service port for the GPUPlan deployment or default port.
+func (n *GPUPlan) GetServicePort() int32 {
 	if n.Spec.Expose.Service.Port == nil {
 		return DefaultAPIPort
 	}
 	return *n.Spec.Expose.Service.Port
 }
 
-// GetServiceType returns the service type for the NIMService deployment.
-func (n *NIMService) GetServiceType() string {
+// GetServiceType returns the service type for the GPUPlan deployment.
+func (n *GPUPlan) GetServiceType() string {
 	return string(n.Spec.Expose.Service.Type)
 }
 
-// GetUserID returns the user ID for the NIMService deployment.
-func (n *NIMService) GetUserID() *int64 {
+// GetUserID returns the user ID for the GPUPlan deployment.
+func (n *GPUPlan) GetUserID() *int64 {
 	if n.Spec.UserID != nil {
 		return n.Spec.UserID
 	}
 	return ptr.To[int64](1000)
 }
 
-// GetGroupID returns the group ID for the NIMService deployment.
-func (n *NIMService) GetGroupID() *int64 {
+// GetGroupID returns the group ID for the GPUPlan deployment.
+func (n *GPUPlan) GetGroupID() *int64 {
 	if n.Spec.GroupID != nil {
 		return n.Spec.GroupID
 	}
 	return ptr.To[int64](2000)
 }
 
-// GetStorageReadOnly returns true if the volume have to be mounted as read-only for the NIMService deployment.
-func (n *NIMService) GetStorageReadOnly() bool {
+// GetStorageReadOnly returns true if the volume have to be mounted as read-only for the GPUPlan deployment.
+func (n *GPUPlan) GetStorageReadOnly() bool {
 	if n.Spec.Storage.ReadOnly == nil {
 		return false
 	}
@@ -645,27 +663,27 @@ func (n *NIMService) GetStorageReadOnly() bool {
 }
 
 // GetServiceAccountParams return params to render ServiceAccount from templates.
-func (n *NIMService) GetServiceAccountParams() *rendertypes.ServiceAccountParams {
+func (n *GPUPlan) GetServiceAccountParams() *rendertypes.ServiceAccountParams {
 	params := &rendertypes.ServiceAccountParams{}
 
 	// Set metadata
 	params.Name = n.GetName()
 	params.Namespace = n.GetNamespace()
 	params.Labels = n.GetServiceLabels()
-	params.Annotations = n.GetNIMServiceAnnotations()
+	params.Annotations = n.GetGPUPlanAnnotations()
 	return params
 }
 
 // GetDeploymentParams returns params to render Deployment from templates.
-func (n *NIMService) GetDeploymentParams() *rendertypes.DeploymentParams {
+func (n *GPUPlan) GetDeploymentParams() *rendertypes.DeploymentParams {
 	params := &rendertypes.DeploymentParams{}
 
 	// Set metadata
 	params.Name = n.GetName()
 	params.Namespace = n.GetNamespace()
 	params.Labels = n.GetServiceLabels()
-	params.Annotations = n.GetNIMServiceAnnotations()
-	params.PodAnnotations = n.GetNIMServiceAnnotations()
+	params.Annotations = n.GetGPUPlanAnnotations()
+	params.PodAnnotations = n.GetGPUPlanAnnotations()
 	delete(params.PodAnnotations, utils.NvidiaAnnotationParentSpecHashKey)
 
 	// Set template spec
@@ -736,13 +754,13 @@ func (n *NIMService) GetDeploymentParams() *rendertypes.DeploymentParams {
 	return params
 }
 
-// GetSchedulerName returns the scheduler name for the NIMService deployment.
-func (n *NIMService) GetSchedulerName() string {
+// GetSchedulerName returns the scheduler name for the GPUPlan deployment.
+func (n *GPUPlan) GetSchedulerName() string {
 	return n.Spec.SchedulerName
 }
 
 // GetStatefulSetParams returns params to render StatefulSet from templates.
-func (n *NIMService) GetStatefulSetParams() *rendertypes.StatefulSetParams {
+func (n *GPUPlan) GetStatefulSetParams() *rendertypes.StatefulSetParams {
 
 	params := &rendertypes.StatefulSetParams{}
 
@@ -750,7 +768,7 @@ func (n *NIMService) GetStatefulSetParams() *rendertypes.StatefulSetParams {
 	params.Name = n.GetName()
 	params.Namespace = n.GetNamespace()
 	params.Labels = n.GetServiceLabels()
-	params.Annotations = n.GetNIMServiceAnnotations()
+	params.Annotations = n.GetGPUPlanAnnotations()
 
 	// Set template spec
 	if !n.IsAutoScalingEnabled() {
@@ -788,7 +806,7 @@ func (n *NIMService) GetStatefulSetParams() *rendertypes.StatefulSetParams {
 }
 
 // GetServiceParams returns params to render Service from templates.
-func (n *NIMService) GetServiceParams() *rendertypes.ServiceParams {
+func (n *GPUPlan) GetServiceParams() *rendertypes.ServiceParams {
 	params := &rendertypes.ServiceParams{}
 
 	// Set metadata
@@ -833,7 +851,7 @@ func (n *NIMService) GetServiceParams() *rendertypes.ServiceParams {
 }
 
 // GetIngressParams returns params to render Ingress from templates.
-func (n *NIMService) GetIngressParams() *rendertypes.IngressParams {
+func (n *GPUPlan) GetIngressParams() *rendertypes.IngressParams {
 	params := &rendertypes.IngressParams{}
 
 	params.Enabled = n.IsIngressEnabled()
@@ -847,7 +865,7 @@ func (n *NIMService) GetIngressParams() *rendertypes.IngressParams {
 }
 
 // GetRoleParams returns params to render Role from templates.
-func (n *NIMService) GetRoleParams() *rendertypes.RoleParams {
+func (n *GPUPlan) GetRoleParams() *rendertypes.RoleParams {
 	params := &rendertypes.RoleParams{}
 
 	// Set metadata
@@ -879,7 +897,7 @@ func (n *NIMService) GetRoleParams() *rendertypes.RoleParams {
 }
 
 // GetRoleBindingParams returns params to render RoleBinding from templates.
-func (n *NIMService) GetRoleBindingParams() *rendertypes.RoleBindingParams {
+func (n *GPUPlan) GetRoleBindingParams() *rendertypes.RoleBindingParams {
 	params := &rendertypes.RoleBindingParams{}
 
 	// Set metadata
@@ -892,7 +910,7 @@ func (n *NIMService) GetRoleBindingParams() *rendertypes.RoleBindingParams {
 }
 
 // GetHPAParams returns params to render HPA from templates.
-func (n *NIMService) GetHPAParams() *rendertypes.HPAParams {
+func (n *GPUPlan) GetHPAParams() *rendertypes.HPAParams {
 	params := &rendertypes.HPAParams{}
 
 	params.Enabled = n.IsAutoScalingEnabled()
@@ -921,7 +939,7 @@ func (n *NIMService) GetHPAParams() *rendertypes.HPAParams {
 }
 
 // GetSCCParams return params to render SCC from templates.
-func (n *NIMService) GetSCCParams() *rendertypes.SCCParams {
+func (n *GPUPlan) GetSCCParams() *rendertypes.SCCParams {
 	params := &rendertypes.SCCParams{}
 	// Set metadata
 	params.Name = "nim-service-scc"
@@ -931,7 +949,7 @@ func (n *NIMService) GetSCCParams() *rendertypes.SCCParams {
 }
 
 // GetServiceMonitorParams return params to render Service Monitor from templates.
-func (n *NIMService) GetServiceMonitorParams() *rendertypes.ServiceMonitorParams {
+func (n *GPUPlan) GetServiceMonitorParams() *rendertypes.ServiceMonitorParams {
 	params := &rendertypes.ServiceMonitorParams{}
 	serviceMonitor := n.GetServiceMonitor()
 	params.Enabled = n.IsServiceMonitorEnabled()
@@ -967,8 +985,8 @@ func (n *NIMService) GetServiceMonitorParams() *rendertypes.ServiceMonitorParams
 	return params
 }
 
-func (n *NIMService) GetIngressAnnotations() map[string]string {
-	nimServiceAnnotations := n.GetNIMServiceAnnotations()
+func (n *GPUPlan) GetIngressAnnotations() map[string]string {
+	nimServiceAnnotations := n.GetGPUPlanAnnotations()
 
 	if n.Spec.Expose.Ingress.Annotations != nil {
 		return utils.MergeMaps(nimServiceAnnotations, n.Spec.Expose.Ingress.Annotations)
@@ -976,8 +994,8 @@ func (n *NIMService) GetIngressAnnotations() map[string]string {
 	return nimServiceAnnotations
 }
 
-func (n *NIMService) GetServiceAnnotations() map[string]string {
-	nimServiceAnnotations := n.GetNIMServiceAnnotations()
+func (n *GPUPlan) GetServiceAnnotations() map[string]string {
+	nimServiceAnnotations := n.GetGPUPlanAnnotations()
 
 	if n.Spec.Expose.Service.Annotations != nil {
 		return utils.MergeMaps(nimServiceAnnotations, n.Spec.Expose.Service.Annotations)
@@ -985,8 +1003,8 @@ func (n *NIMService) GetServiceAnnotations() map[string]string {
 	return nimServiceAnnotations
 }
 
-func (n *NIMService) GetHPAAnnotations() map[string]string {
-	nimServiceAnnotations := n.GetNIMServiceAnnotations()
+func (n *GPUPlan) GetHPAAnnotations() map[string]string {
+	nimServiceAnnotations := n.GetGPUPlanAnnotations()
 
 	if n.Spec.Scale.Annotations != nil {
 		return utils.MergeMaps(nimServiceAnnotations, n.Spec.Scale.Annotations)
@@ -994,8 +1012,8 @@ func (n *NIMService) GetHPAAnnotations() map[string]string {
 	return nimServiceAnnotations
 }
 
-func (n *NIMService) GetServiceMonitorAnnotations() map[string]string {
-	nimServiceAnnotations := n.GetNIMServiceAnnotations()
+func (n *GPUPlan) GetServiceMonitorAnnotations() map[string]string {
+	nimServiceAnnotations := n.GetGPUPlanAnnotations()
 
 	if n.Spec.Metrics.ServiceMonitor.Annotations != nil {
 		return utils.MergeMaps(nimServiceAnnotations, n.Spec.Metrics.ServiceMonitor.Annotations)
@@ -1003,11 +1021,11 @@ func (n *NIMService) GetServiceMonitorAnnotations() map[string]string {
 	return nimServiceAnnotations
 }
 
-// GetProxySpec returns the proxy spec for the NIMService deployment.
-func (n *NIMService) GetProxySpec() *ProxySpec {
+// GetProxySpec returns the proxy spec for the GPUPlan deployment.
+func (n *GPUPlan) GetProxySpec() *ProxySpec {
 	return n.Spec.Proxy
 }
 
 func init() {
-	SchemeBuilder.Register(&NIMService{}, &NIMServiceList{})
+	SchemeBuilder.Register(&GPUPlan{}, &GPUPlanList{})
 }
