@@ -37,8 +37,9 @@ const (
 
 // Expose defines attributes to expose the service.
 type Expose struct {
-	Service Service `json:"service,omitempty"`
-	Ingress Ingress `json:"ingress,omitempty"`
+	Service Service  `json:"service,omitempty"`
+	Ingress Ingress  `json:"ingress,omitempty"`
+	Gateway *Gateway `json:"gateway,omitempty"`
 }
 
 // Service defines attributes to create a service.
@@ -71,6 +72,18 @@ type Service struct {
 type ExposeV1 struct {
 	Service Service   `json:"service,omitempty"`
 	Ingress IngressV1 `json:"ingress,omitempty"`
+	Gateway *Gateway  `json:"gateway,omitempty"`
+}
+
+type Gateway struct {
+	Enabled     *bool              `json:"enabled,omitempty"`
+	GatewayRefs []GatewayReference `json:"gatewayRefs,omitempty"`
+}
+
+type GatewayReference struct {
+	// +kubebuilder:default:=default
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
 }
 
 // Metrics defines attributes to setup metrics collection.
