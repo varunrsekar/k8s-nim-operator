@@ -303,6 +303,30 @@ type DRAResource struct {
 	//
 	// +kubebuilder:validation:items:MinLength=1
 	Requests []string `json:"requests,omitempty"`
+	// ClaimSpec is the spec to auto-generate a resourceclaim. Only one of ClaimSpec, ResourceClaimName or ResourceClaimTemplateName must be specified.
+	ClaimSpec *ClaimBuilderSpec `json:"claimSpec,omitempty"`
+}
+
+type DRADeviceSpec struct {
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*`
+	Name string `json:"name"`
+	// +kubebuilder:default=1
+	Count uint32 `json:"count"`
+	// +kubebuilder:default=gpu.nvidia.com
+	DeviceClassName string `json:"deviceClassName"`
+	// MatchAttributes is a map of {key, value} pairs. A single {key, value} pair
+	MatchAttributes map[string]string `json:"matchAttributes,omitempty"`
+	MatchCapacity   map[string]string `json:"matchCapacity,omitempty"`
+}
+
+type ClaimBuilderSpec struct {
+	// +kubebuilder:validation:MinLength=1
+	Devices []DRADeviceSpec `json:"devices"`
+	// +kubebuilder:default=true
+	// TODO: Warn that if set to false, then this NIMService cannot be scaled up.
+	IsTemplate bool
 }
 
 // DRAResourceStatus defines the status of the DRAResource.
