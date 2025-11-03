@@ -27,6 +27,7 @@ import (
 	"os"
 	"strings"
 
+	nvidiaresourcev1beta1 "github.com/NVIDIA/k8s-dra-driver-gpu/api/nvidia.com/resource/v1beta1"
 	kserveconstants "github.com/kserve/kserve/pkg/constants"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
@@ -135,6 +136,9 @@ type NIMServiceSpec struct {
 	// +kubebuilder:validation:Enum=standalone;kserve
 	// +kubebuilder:default:="standalone"
 	InferencePlatform PlatformType `json:"inferencePlatform,omitempty"`
+	// ComputeDomain specifies the compute domain to use for a
+	// multi-node NIMService.
+	ComputeDomain *ComputeDomain `json:"computeDomain,omitempty"`
 }
 
 // NimServiceMultiNodeConfig defines the configuration for multi-node NIMService.
@@ -167,6 +171,17 @@ type MultiNodeMPIConfig struct {
 	MPIStartTimeout int `json:"mpiStartTimeout"`
 }
 
+// ComputeDomain defines the specification for the compute domain to use for a NIMService.
+
+// Note that this will only work on NVLink-enabled nodes.
+type ComputeDomain struct {
+	// Create specifies whether to create a new ComputeDomain.
+	// If unset or set to false, an existing ComputeDomain must be referenced via the `Name` field.
+	Create *bool `json:"create,omitempty"`
+	// Name of the ComputeDomain to use. Required if `Create` is false (i.e., using an existing ComputeDomain).
+	Name string `json:"name,omitempty"`
+}
+
 // NIMCacheVolSpec defines the spec to use NIMCache volume.
 type NIMCacheVolSpec struct {
 	Name    string `json:"name,omitempty"`
@@ -182,7 +197,8 @@ type NIMServiceStatus struct {
 	// DRAResourceStatuses is the status of the DRA resources.
 	// +listType=map
 	// +listMapKey=name
-	DRAResourceStatuses []DRAResourceStatus `json:"draResourceStatuses,omitempty"`
+	DRAResourceStatuses []DRAResourceStatus  `json:"draResourceStatuses,omitempty"`
+	ComputeDomainStatus *ComputeDomainStatus `json:"computeDomainStatus,omitempty"`
 }
 
 // ModelStatus defines the configuration of the NIMService model.
@@ -190,6 +206,11 @@ type ModelStatus struct {
 	Name             string `json:"name"`
 	ClusterEndpoint  string `json:"clusterEndpoint"`
 	ExternalEndpoint string `json:"externalEndpoint"`
+}
+
+// ComputeDomainStatus defines the status of the ComputeDomain.
+type ComputeDomainStatus struct {
+	Status string `json:"status"`
 }
 
 // +genclient
@@ -204,6 +225,7 @@ type NIMService struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// +kubebuilder:validation:XValidation:rule="(has(self.draResources) && has(oldSelf.draResources) && self.draResources == oldSelf.draResources) || (!has(self.draResources) && !has(oldSelf.draResources))",message="spec.draResources is immutable"
+	// +kubebuilder:validation:XValidation:rule="(has(self.computeDomain) && has(oldSelf.computeDomain) && self.computeDomain == oldSelf.computeDomain) || (!has(self.computeDomain) && !has(oldSelf.computeDomain))",message="spec.computeDomain is immutable"
 	Spec   NIMServiceSpec   `json:"spec,omitempty"`
 	Status NIMServiceStatus `json:"status,omitempty"`
 }
@@ -1898,6 +1920,10 @@ func (n *NIMService) GetInferenceServiceHPAParams() (*int32, int32, string, stri
 	return minReplicas, maxReplicas, metric, metricType, target
 }
 
+func (n *NIMService) IsMultiNode() bool {
+	return n.GetMultiNodePipelineParallelism() > 1
+}
+
 func (n *NIMService) GetMultiNodeTensorParallelism() uint32 {
 	if n.Spec.MultiNode != nil && n.Spec.MultiNode.Parallelism != nil && n.Spec.MultiNode.Parallelism.Tensor != nil {
 		return *n.Spec.MultiNode.Parallelism.Tensor
@@ -1910,6 +1936,40 @@ func (n *NIMService) GetMultiNodePipelineParallelism() uint32 {
 		return *n.Spec.MultiNode.Parallelism.Pipeline
 	}
 	return 0
+}
+
+func (n *NIMService) IsComputeDomainEnabled() bool {
+	if !n.IsMultiNode() {
+		return false
+	}
+	return n.Spec.ComputeDomain != nil
+}
+
+// GetComputeDomainName returns the name to be used for the ComputeDomain based on the custom spec
+// Prefers pvc.Name if explicitly set by the user in the NIMService instance.
+func (n *NIMService) GetComputeDomainName() string {
+	if n.Spec.ComputeDomain != nil && n.Spec.ComputeDomain.Name != "" {
+		return n.Spec.ComputeDomain.Name
+	}
+	return fmt.Sprintf("%s-cd", n.GetName())
+}
+
+func (n *NIMService) GetComputeDomainParams(resourceClaimTemplateName string) *rendertypes.ComputeDomainParams {
+	params := &rendertypes.ComputeDomainParams{}
+	params.Name = n.GetName()
+	params.Namespace = n.GetNamespace()
+	params.Labels = n.GetServiceLabels()
+	params.Annotations = n.GetNIMServiceAnnotations()
+	params.Spec = &nvidiaresourcev1beta1.ComputeDomainSpec{
+		Channel: &nvidiaresourcev1beta1.ComputeDomainChannelSpec{
+			ResourceClaimTemplate: nvidiaresourcev1beta1.ComputeDomainResourceClaimTemplate{
+				Name: resourceClaimTemplateName,
+			},
+			AllocationMode: nvidiaresourcev1beta1.ComputeDomainChannelAllocationModeSingle,
+		},
+	}
+
+	return params
 }
 
 func init() {

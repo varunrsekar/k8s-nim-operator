@@ -974,6 +974,21 @@ spec:
                 items:
                   type: string
                 type: array
+              computeDomain:
+                description: |-
+                  ComputeDomain specifies the compute domain to use for a
+                  multi-node NIMService.
+                properties:
+                  create:
+                    description: |-
+                      Create specifies whether to create a new ComputeDomain.
+                      If unset or set to false, an existing ComputeDomain must be referenced via the `Name` field.
+                    type: boolean
+                  name:
+                    description: Name of the ComputeDomain to use. Required if `Create`
+                      is false (i.e., using an existing ComputeDomain).
+                    type: string
+                type: object
               draResources:
                 description: DRAResources is the list of DRA resource claims to be
                   used for the NIMService deployment or leader worker set.
@@ -3501,6 +3516,9 @@ spec:
             - message: spec.draResources is immutable
               rule: (has(self.draResources) && has(oldSelf.draResources) && self.draResources
                 == oldSelf.draResources) || (!has(self.draResources) && !has(oldSelf.draResources))
+            - message: spec.computeDomain is immutable
+              rule: (has(self.computeDomain) && has(oldSelf.computeDomain) && self.computeDomain
+                == oldSelf.computeDomain) || (!has(self.computeDomain) && !has(oldSelf.computeDomain))
             - message: autoScaling must be nil or disabled when multiNode is set
               rule: '!(has(self.multiNode) && has(self.scale) && has(self.scale.enabled)
                 && self.scale.enabled)'
@@ -3518,6 +3536,14 @@ spec:
               availableReplicas:
                 format: int32
                 type: integer
+              computeDomainStatus:
+                description: ComputeDomainStatus defines the status of the ComputeDomain.
+                properties:
+                  status:
+                    type: string
+                required:
+                - status
+                type: object
               conditions:
                 items:
                   description: Condition contains details for one aspect of the current
