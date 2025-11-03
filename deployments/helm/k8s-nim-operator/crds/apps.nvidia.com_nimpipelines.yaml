@@ -1026,6 +1026,16 @@ spec:
                           items:
                             type: string
                           type: array
+                        computeDomain:
+                          description: |-
+                            ComputeDomain specifies the compute domain to use for a
+                            multi-node NIMService.
+                          properties:
+                            create:
+                              type: boolean
+                            name:
+                              type: string
+                          type: object
                         draResources:
                           description: DRAResources is the list of DRA resource claims
                             to be used for the NIMService deployment or leader worker
@@ -2523,7 +2533,6 @@ spec:
                               type: object
                           type: object
                         replicas:
-                          default: 1
                           format: int32
                           minimum: 1
                           type: integer
