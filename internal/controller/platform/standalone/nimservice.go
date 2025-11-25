@@ -1179,9 +1179,6 @@ func (r *NIMServiceReconciler) reconcileComputeDomain(ctx context.Context, nimSe
 	if !nimService.IsComputeDomainEnabled() {
 		return nil
 	}
-	if nimService.Spec.ComputeDomain.Create == nil || !*nimService.Spec.ComputeDomain.Create {
-		return nil
-	}
 	// The last item in the namedDraResources is the compute domain resource claim template.
 	computeDomainResource := namedDraResources[len(namedDraResources)-1]
 	cdParams := nimService.GetComputeDomainParams(computeDomainResource.ResourceName)

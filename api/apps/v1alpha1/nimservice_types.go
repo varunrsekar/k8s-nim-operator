@@ -174,13 +174,7 @@ type MultiNodeMPIConfig struct {
 // ComputeDomain defines the specification for the compute domain to use for a NIMService.
 
 // Note that this will only work on NVLink-enabled nodes.
-type ComputeDomain struct {
-	// Create specifies whether to create a new ComputeDomain.
-	// If unset or set to false, an existing ComputeDomain must be referenced via the `Name` field.
-	Create *bool `json:"create,omitempty"`
-	// Name of the ComputeDomain to use. Required if `Create` is false (i.e., using an existing ComputeDomain).
-	Name string `json:"name,omitempty"`
-}
+type ComputeDomain struct{}
 
 // NIMCacheVolSpec defines the spec to use NIMCache volume.
 type NIMCacheVolSpec struct {
@@ -1943,15 +1937,6 @@ func (n *NIMService) IsComputeDomainEnabled() bool {
 		return false
 	}
 	return n.Spec.ComputeDomain != nil
-}
-
-// GetComputeDomainName returns the name to be used for the ComputeDomain based on the custom spec
-// Prefers pvc.Name if explicitly set by the user in the NIMService instance.
-func (n *NIMService) GetComputeDomainName() string {
-	if n.Spec.ComputeDomain != nil && n.Spec.ComputeDomain.Name != "" {
-		return n.Spec.ComputeDomain.Name
-	}
-	return fmt.Sprintf("%s-cd", n.GetName())
 }
 
 func (n *NIMService) GetComputeDomainParams(resourceClaimTemplateName string) *rendertypes.ComputeDomainParams {
