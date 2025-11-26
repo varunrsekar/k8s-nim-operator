@@ -28,7 +28,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	resourcev1beta2 "k8s.io/api/resource/v1beta2"
+	resourcev1 "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
@@ -109,6 +109,7 @@ func NewNIMServiceReconciler(client client.Client, scheme *runtime.Scheme, updat
 // +kubebuilder:rbac:groups=leaderworkerset.x-k8s.io,resources=leaderworkersets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list
 // +kubebuilder:rbac:groups=serving.kserve.io,resources=inferenceservices,verbs=get;list;watch;create;update;patch;delete
+// *kubebuilder:rbac:groups=nvidia.com,resources=computedomains,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -270,6 +271,7 @@ func (r *NIMServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&rbacv1.RoleBinding{}).
 		Owns(&networkingv1.Ingress{}).
 		Owns(&autoscalingv2.HorizontalPodAutoscaler{}).
+		Owns(&resourcev1.ResourceClaimTemplate{}).
 		WithEventFilter(predicate.Funcs{
 			UpdateFunc: func(e event.UpdateEvent) bool {
 				// Type assert to NIMService
@@ -293,22 +295,12 @@ func (r *NIMServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&appsv1alpha1.NIMCache{},
 			handler.EnqueueRequestsFromMapFunc(r.mapNIMCacheToNIMService),
 			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
+		).
+		Watches(
+			&resourcev1.ResourceClaim{},
+			handler.EnqueueRequestsFromMapFunc(r.mapResourceClaimToNIMService),
+			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
 		)
-
-	nimServiceBuilder, err = k8sutil.ControllerCallbackIfCRDExists(r.discoveryClient,
-		nimServiceBuilder,
-		resourcev1beta2.SchemeGroupVersion.WithResource("resourceclaims"),
-		func(bd *builder.Builder) *builder.Builder {
-			return bd.Watches(
-				&resourcev1beta2.ResourceClaim{},
-				handler.EnqueueRequestsFromMapFunc(r.mapResourceClaimToNIMService),
-				builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
-			)
-		},
-	)
-	if err != nil {
-		return err
-	}
 
 	nimServiceBuilder, err = k8sutil.ControllerOwnsIfCRDExists(
 		r.discoveryClient,
@@ -325,16 +317,6 @@ func (r *NIMServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		nimServiceBuilder,
 		kservev1beta1.SchemeGroupVersion.WithResource("inferenceservices"),
 		&kservev1beta1.InferenceService{},
-	)
-	if err != nil {
-		return err
-	}
-
-	nimServiceBuilder, err = k8sutil.ControllerOwnsIfCRDExists(
-		r.discoveryClient,
-		nimServiceBuilder,
-		resourcev1beta2.SchemeGroupVersion.WithResource("resourceclaimtemplates"),
-		&resourcev1beta2.ResourceClaimTemplate{},
 	)
 	if err != nil {
 		return err
@@ -389,7 +371,7 @@ func (r *NIMServiceReconciler) mapNIMCacheToNIMService(ctx context.Context, obj 
 }
 
 func (r *NIMServiceReconciler) mapResourceClaimToNIMService(ctx context.Context, obj client.Object) []ctrl.Request {
-	resourceClaim, ok := obj.(*resourcev1beta2.ResourceClaim)
+	resourceClaim, ok := obj.(*resourcev1.ResourceClaim)
 	if !ok {
 		return []ctrl.Request{}
 	}
